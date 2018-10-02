@@ -52,7 +52,7 @@ class ApiController {
     //MARK: - Api Calls
     
     func currentWeather(city: String) -> Observable<Weather> {
-        return buildRequest(pathComponent: "weather", params: [("q", city)]).map() { json in
+        return buildRequest(pathComponent: "weather", params: [("q", city)]).map { json in
             return Weather(
                 cityName: json["name"].string ?? "Unknown",
                 temperature: json["main"]["temp"].int ?? -1000,
@@ -65,7 +65,7 @@ class ApiController {
     }
     
     func currentWeather(lat: Double, lon: Double) -> Observable<Weather> {
-        return buildRequest(pathComponent: "weather", params: [("lat", "\(lat)"), ("lon", "\(lon)")]).map() { json in
+        return buildRequest(pathComponent: "weather", params: [("lat", "\(lat)"), ("lon", "\(lon)")]).map { json in
             return Weather(
                 cityName: json["name"].string ?? "Unknown",
                 temperature: json["main"]["temp"].int ?? -1000,
@@ -116,7 +116,7 @@ class ApiController {
         
         let session = URLSession.shared
         return request.flatMap() { request in
-            return session.rx.data(request: request).map { JSON(data: $0) }
+            return session.rx.data(request: request).map { try? JSON(data: $0) }.filter { $0 != nil }.map { $0! }
         }
     }
     
