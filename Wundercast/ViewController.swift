@@ -81,30 +81,53 @@ class ViewController: UIViewController {
                 .catchErrorJustReturn(ApiController.Weather.empty)
         }
         
+        let maxAttempts = 4
+        let retryHandler: (Observable<Error>) -> Observable<Int> = { e in
+            return e.enumerated()
+                .flatMap { attempt, error -> Observable<Int> in
+                    if attempt >= maxAttempts - 1 {
+                        return Observable.error(error)
+                    } else if let casted = error as? ApiController.ApiError, casted == .invalidKey {
+                        return ApiController.shared.apiKey
+                            .filter { $0 != "" }
+                            .map { _ in 1 }
+                    }
+                    print("💥💥💥 retrying after \(attempt + 1) seconds 💥💥💥")
+                    return Observable<Int>
+                        .timer(RxTimeInterval(attempt + 1), scheduler: MainScheduler.instance)
+                        .take(1)
+            }
+        }
+        
         let searchInput = searchCityName.rx.controlEvent(.editingDidEndOnExit).asObservable()
             .map { self.searchCityName.text }
             .filter { ($0 ?? "").count > 0 }
         
-        let maxAttempts = 4
         let textSearch = searchInput.flatMap { text in
             return ApiController.shared.currentWeather(city: text ?? "Error")
                 .do(onNext: { data in
                     if let text = text {
                         self.cache[text] = data
                     }
-                })
-                .retryWhen { e in
-                    // e 为原始的 error observable
-                    e.enumerated().flatMap { attempt, error -> Observable<Int> in
-                        if attempt >= maxAttempts - 1 {
-                            return Observable.error(error)
-                        }
-                        print("💥💥💥 retrying after \(attempt + 1) seconds 💥💥💥")
-                        return Observable<Int>
-                            .timer(RxTimeInterval(attempt + 1), scheduler: MainScheduler.instance)
-                            .take(1)
+                }, onError: { [weak self] e in
+                    guard let `self` = self else { return }
+                    DispatchQueue.main.async {
+                        self.showError(error: e)
                     }
-                }
+                })
+                .retryWhen(retryHandler)
+//                .retryWhen { e in
+//                    // e 为原始的 error observable
+//                    e.enumerated().flatMap { attempt, error -> Observable<Int> in
+//                        if attempt >= maxAttempts - 1 {
+//                            return Observable.error(error)
+//                        }
+//                        print("💥💥💥 retrying after \(attempt + 1) seconds 💥💥💥")
+//                        return Observable<Int>
+//                            .timer(RxTimeInterval(attempt + 1), scheduler: MainScheduler.instance)
+//                            .take(1)
+//                    }
+//                }
                 .catchError { error in
                     if let text = text, let cacheData = self.cache[text] {
                         return Observable.just(cacheData)
@@ -187,6 +210,21 @@ class ViewController: UIViewController {
         alert.addAction(UIAlertAction(title: "Cancel", style: UIAlertActionStyle.destructive))
         
         self.present(alert, animated: true)
+    }
+    
+    func showError(error e: Error) {
+        if let e = e as? ApiController.ApiError {
+            switch e {
+            case .cityNotFound:
+                InfoView.showIn(viewController: self, message: "City Nama if invalid")
+            case .serverFailure:
+                InfoView.showIn(viewController: self, message: "Server error")
+            case .invalidKey:
+                InfoView.showIn(viewController: self, message: "Key is invalid")
+            }
+        } else {
+            InfoView.showIn(viewController: self, message: "An error occurred")
+        }
     }
     
     // MARK: - Style
